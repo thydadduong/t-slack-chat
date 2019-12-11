@@ -11,8 +11,7 @@ const io = require("socket.io")(http);
 const token = process.env.SLACK_BOT_TOKEN;
 const slackApiUrl = "https://slack.com/api/";
 const slackService = "channels.replies";
-const slackAuthToken =
-    "xoxp-827349407794-839673764884-866242702276-7927cd1d9be4c7abe4a4b046e85bd653";
+const slackAuthToken = process.env.SLACK_AUTH_TOKEN
 const slackChannel = "CR56YBWMR";
 
 const rtm = new RTMClient(token);
