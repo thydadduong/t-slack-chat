@@ -5,18 +5,16 @@
         <div class="welcome">
           <p class="title">Let's talk to our customer care.</p>
         </div>
-        <div class="login-form">
-          <form @submit.prevent="startChat">
-            <input type="text" id="username" placeholder="username" v-model="username" />
-            <button type="submit" id="login-button" :disabled="!username">GO</button>
-          </form>
-        </div>
+        <form class="login-form" @submit.prevent="startChat">
+          <input type="text" id="username" placeholder="username" v-model="username" />
+          <button type="submit" id="login-button" :disabled="!username">GO</button>
+        </form>
       </div>
-      <div class="message-layout" v-else>
+      <div class="message-layout" v-show="chatAuthenticated">
         <div class="message-header">
           <p class="header-title">How can I help?</p>
         </div>
-        <div class="message-body">
+        <div id="message-body">
           <div
             style="display:flex"
             v-for="(msg, idx) in messages"
@@ -27,8 +25,12 @@
                 class="avatar"
                 v-if="msg.sender===currentUser.username"
                 :style="{backgroundColor: currentUser.color}"
-              ></span>
-              <span class="avatar" v-else></span>
+              >
+                <img :src="currentUser.avatar" draggable="false" />
+              </span>
+              <span class="avatar" v-else>
+                <img :src="require('@/assets/call-center-agent.png')" draggable="false" />
+              </span>
               <span class="message">
                 <!-- <p>{{msg}}</p> -->
                 <div v-html="msg.text"></div>
@@ -39,7 +41,13 @@
         <div class="message-footer">
           <form @submit.prevent="sendMessage">
             <div class="message-input">
-              <input type="text" id="message" placeholder="Type your message..." v-model="message" />
+              <input
+                type="text"
+                autocomplete="off"
+                id="message"
+                placeholder="Type your message..."
+                v-model="message"
+              />
               <button id="send" :disabled="!message" type="submit">SEND</button>
             </div>
           </form>
@@ -52,7 +60,8 @@
 
 <script>
 import io from "socket.io-client";
-
+// const supportChatUrl = process.env.VUE_APP_CHAT_SUPPORT_URL;
+const supportChatUrl = "http://192.168.100.129:3000/";
 export default {
   name: "home",
   data() {
@@ -67,14 +76,24 @@ export default {
     };
   },
   created() {
-    this.socket = io("http://192.168.100.118:3000");
+    this.socket = io(supportChatUrl);
+
+    this.listentIO();
+
+    const currentUser = localStorage.chatUser
+      ? JSON.parse(localStorage.chatUser)
+      : {};
+    if (currentUser.roomId) {
+      this.login(currentUser);
+    }
   },
   methods: {
     sendMessage() {
       this.socket.emit("SEND_MESSAGE", {
         message: this.message,
         to: this.currentUser.roomId,
-        from: this.currentUser.username
+        from: this.currentUser.username,
+        sender_profile: this.currentUser.avatar
       });
       this.message = "";
     },
@@ -83,24 +102,33 @@ export default {
       document.getElementById("username").blur();
 
       if (this.username) {
-        this.socket.emit("LOGIN", { username: this.username });
-        this.listentIO();
+        this.login({ username: this.username });
       }
     },
+    login(credential) {
+      this.socket.emit("LOGIN", credential);
+    },
     listentIO() {
-      this.socket.on("SENDING_MESSAGE", () => {
-      });
+      this.socket.on("SENDING_MESSAGE", () => {});
 
       this.socket.on("JOIN_SUCCEED", payload => {
         const message = { _id: payload._id, text: payload.msg };
-        this.messages.push(message);
+        if (!this.messages.length) {
+          this.messages.push(message);
+        }
+        this.scrollChatLatestChat();
       });
       this.socket.on("SLACK_MESSAGE", payload => {
         const message = {
           ...payload,
           text: payload.text.replace(/\n/g, "<br/>")
         };
-        this.messages.push(message);
+
+        const msgIdx = this.messages.findIndex(msg => msg._id === message._id);
+        if (msgIdx === -1) {
+          this.messages.push(message);
+        }
+        this.scrollChatLatestChat();
       });
 
       this.socket.on("LOGGED_IN", payload => {
@@ -108,9 +136,18 @@ export default {
         this.connectingChatroom = false;
 
         this.currentUser = payload.currentUser;
+
+        this.messages = payload.messages;
+
         localStorage.chatUser = JSON.stringify(payload.currentUser);
         this.socket.emit("JOIN_ROOM", { roomId: payload.currentUser.roomId });
       });
+    },
+
+    scrollChatLatestChat() {
+      let chatBody = document.getElementById("message-body");
+
+      chatBody.scrollTop = chatBody.scrollHeight;
     }
   }
 };
@@ -122,8 +159,8 @@ export default {
   // border: 2px solid teal;
   bottom: 2rem;
   right: 2rem;
-  width: 30rem;
-  height: 50rem;
+  width: 20rem;
+  height: 30rem;
   z-index: 2019;
   border-radius: 1rem;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.19), 0 6px 6px rgba(0, 0, 0, 0.23);
@@ -133,6 +170,7 @@ export default {
     display: flex;
     flex-direction: column;
     height: 100%;
+    width: 100%;
 
     .welcome {
       background-color: teal;
@@ -146,15 +184,17 @@ export default {
       }
     }
     .login-form {
+      width: 100%;
+
       flex: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-
       #username {
         border: 2px solid teal;
         border-radius: 3rem;
         padding: 0.5rem 1rem;
+        width: 80%;
         font-size: 2rem;
         &::placeholder {
           color: #ccc;
@@ -205,7 +245,7 @@ export default {
       }
     }
 
-    .message-body {
+    #message-body {
       flex: 1;
       overflow-y: auto;
       padding: 0 1rem;
@@ -217,12 +257,31 @@ export default {
         flex-direction: row;
         margin-top: 0.25rem;
         .avatar {
-          width: 3rem;
-          height: 3rem;
-          border-radius: 3rem;
+          width: 40px;
+          height: 40px;
+          position: relative;
+          display: block;
+          z-index: 2;
+          border-radius: 100%;
+          -webkit-border-radius: 100%;
+          -moz-border-radius: 100%;
+          -ms-border-radius: 100%;
+
           margin-top: auto;
           background-color: teal;
-          box-shadow: 0 4px 4px -4px black;
+
+          img {
+            width: 40px;
+            height: 40px;
+            border-radius: 100%;
+            -webkit-border-radius: 100%;
+            -moz-border-radius: 100%;
+            -ms-border-radius: 100%;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+          }
         }
         .message {
           max-width: 275px;
@@ -249,6 +308,7 @@ export default {
       height: 4rem;
       form {
         height: 100%;
+        width: 100%;
         .message-input {
           display: flex;
           height: 100%;
