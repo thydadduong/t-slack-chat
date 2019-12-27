@@ -8,14 +8,19 @@ const app = express();
 const http = require("http").createServer(app);
 const io = require("socket.io")(http);
 
-const token = process.env.SLACK_BOT_TOKEN;
-const slackApiUrl = "https://slack.com/api/";
-const slackService = "channels.replies";
-const slackAuthToken = process.env.SLACK_AUTH_TOKEN
-const slackChannel = "CR56YBWMR";
+const { chatConfig } = require("./chat.config");
 
-const rtm = new RTMClient(token);
-const web = new WebClient(token);
+/**
+ * slack config
+ */
+const slackApiUrl = chatConfig.slack_api_url;
+const slackBotToken = chatConfig.slack_bot_token;
+const slackAuthToken = chatConfig.slack_auth_token;
+const slackChatChannel = chatConfig.slack_chat_channel;
+const slackService = chatConfig.slack_services.chat_replies;
+
+const rtm = new RTMClient(slackBotToken);
+const web = new WebClient(slackBotToken);
 
 const createMainThread = async info => {
     const mThread = {
@@ -23,7 +28,7 @@ const createMainThread = async info => {
         text: "Join Channel",
         mrkdwn: true,
         as_user: false,
-        channel: "CR56YBWMR",
+        channel: slackChatChannel,
         reply_broadcast: false,
         icon_url: info.avatar
     };
@@ -43,7 +48,7 @@ const replyThreadMessage = async message => {
         thread_ts: message.thread_ts,
         mrkdwn: true,
         as_user: false,
-        channel: "CR56YBWMR",
+        channel: slackChatChannel,
         reply_broadcast: false,
         icon_url: message.icon_url
     };
@@ -58,7 +63,7 @@ const replyThreadMessage = async message => {
 };
 
 const getThreadMessages = async thread_ts => {
-    const reqMessageUrl = `${slackApiUrl}${slackService}?token=${slackAuthToken}&channel=${slackChannel}&thread_ts=${thread_ts}`;
+    const reqMessageUrl = `${slackApiUrl}${slackService}?token=${slackAuthToken}&channel=${slackChatChannel}&thread_ts=${thread_ts}`;
     return axios.get(reqMessageUrl);
 };
 
@@ -67,36 +72,8 @@ const getThreadMessages = async thread_ts => {
 })();
 
 //socket.io
-// todo: json
-const users = [
-    {
-        _id: "bot12345678",
-        username: "bot",
-        isOnline: true,
-        roomId: ""
-    }
-];
-
-const chatRooms = [
-    {
-        _id: "room123456",
-        messages: [
-            {
-                _id: "msg1234567",
-                from: "bot12345678",
-                to: "u123456",
-                text: "hello world"
-            }
-        ]
-    }
-];
-
 const emitClientMessage = (roomId, slackEvent) => {
-    let message = {
-        _id: slackEvent.ts,
-        text: slackEvent.text,
-        sender: slackEvent.username || "customer care"
-    };
+    let message = slackEvent;
     // console.log("emit message", message, roomId);
 
     io.sockets.in(roomId).emit("SLACK_MESSAGE", message);
@@ -144,12 +121,8 @@ const tChat = io.on("connection", socket => {
             try {
                 const response = await createMainThread(mUser);
                 mUser.roomId = response.ts;
-                const mRoom = {
-                    _id: response.ts,
-                    messages: []
-                };
+
                 userList.push(mUser);
-                chatRooms.push(mRoom);
                 FileManager.writeJsonFile(
                     "./store/users.json",
                     JSON.stringify(userList)
@@ -164,15 +137,15 @@ const tChat = io.on("connection", socket => {
             try {
                 const response = await getThreadMessages(credential.roomId);
                 const slackMessages = response.data.messages;
+                FileManager.writeJsonFile(
+                    "messages.json",
+                    JSON.stringify(slackMessages)
+                );
                 slackMessages.shift();
 
                 socket.emit("LOGGED_IN", {
                     currentUser: user,
-                    messages: slackMessages.map(msg => ({
-                        _id: msg.ts,
-                        text: msg.text,
-                        sender: msg.username || "customer care"
-                    }))
+                    messages: slackMessages
                 });
             } catch (error) {
                 socket.emit("LOGGED_IN", {
@@ -188,7 +161,7 @@ const tChat = io.on("connection", socket => {
     socket.on("JOIN_ROOM", payload => {
         socket.join(payload.roomId);
         io.sockets.in(payload.roomId).emit("JOIN_SUCCEED", {
-            msg: "Hello! <br/> How can help you?",
+            msg: "Hello! How can help you?",
             _id: getObjectId()
         });
     });
