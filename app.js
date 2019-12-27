@@ -5,9 +5,10 @@ const axios = require("axios");
 require("dotenv").config();
 const express = require("express");
 const app = express();
+app.use(cors);
 const http = require("http").createServer(app);
 const io = require("socket.io")(http);
-
+const cors = require("cors");
 const { chatConfig } = require("./chat.config");
 
 /**
