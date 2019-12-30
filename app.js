@@ -201,7 +201,7 @@ const getColor = () => "#" + Math.floor(Math.random() * 16777215).toString(16);
 //server
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: false, limit: "50mb" }));
-
+app.use('/', express.static('assets'))
 app.get("/", (req, res) => res.send("Welcome to TSC!"));
 http.listen(3000, function() {
     console.log("listening on *:3000");
